@@ -149,6 +149,17 @@ var (
 		"[生病]", "😷", "[Sick]", "😷",
 		"[笑脸]", "😁", "[Happy]", "😁",
 	)
+
+	matrixReplacer = strings.NewReplacer(
+		"🤷\u200d♂", "[抠鼻]", "🤷\u200d♂", "[DigNose]",
+		"🤦\u200d♂", "[捂脸]", "🤦\u200d♂", "[Facepalm]",
+		"🙄\u200d🍉", "[吃瓜]", "🙄\u200d🍉", "[Onlooker]",
+		"💪\u200d😁", "[加油]", "💪\u200d😁", "[GoForIt]",
+		"💪\u200d😷", "[加油加油]",
+		"🐶\u200d😏", "[旺柴]", "🐶\u200d😏", "[Doge]",
+		"😏\u200d👌", "[好的]", "😏\u200d👌", "[NoProb]",
+		"😟\u200d🤚", "[打脸]", "😟\u200d🤚", "[MyBad]",
+	)
 )
 
 const sampleRate = 24000
@@ -288,4 +299,8 @@ func HTTPGetReadCloser(url string) (io.ReadCloser, error) {
 
 func ReplaceEmotion(content string) string {
 	return replacer.Replace(content)
+}
+
+func ReplaceToEmotion(content string) string {
+	return matrixReplacer.Replace(content)
 }

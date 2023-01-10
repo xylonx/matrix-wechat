@@ -1396,7 +1396,7 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 	case event.MsgText, event.MsgEmote:
 		var mentions []string
 		msg.MessageType = string(event.MsgText)
-		text := content.Body
+		text := ReplaceToEmotion(content.Body)
 
 		if content.Format == event.FormatHTML {
 			formatted, mentionedUIDs := p.bridge.Formatter.ParseMatrix(content.FormattedBody)
