@@ -1446,16 +1446,13 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			msg.Data = mentions
 		}
 	case event.MsgImage, event.MsgVideo, event.MsgFile:
-		name, mediaUrl, err := p.getMatrixMediaUrl(content)
+		data, err := p.getMatrixMediaUrl(content)
 		if err != nil {
 			p.log.Warnfln("Failed to get matrix media url: %v", err)
 			return
 		}
 		msg.MessageType = string(content.MsgType)
-		msg.Data = &wechat.MediaData{
-			Name: name,
-			URL:  mediaUrl,
-		}
+		msg.Data = data
 	default:
 		p.log.Warnfln("%s not support", content.MsgType)
 		return
