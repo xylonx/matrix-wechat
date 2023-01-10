@@ -1317,7 +1317,7 @@ func (p *Portal) uploadMedia(intent *appservice.IntentAPI, data []byte, content 
 }
 
 // getMatrixMediaUrl - parse media name and downloadable url from event
-func (p *Portal) getMatrixMediaUrl(content *event.MessageEventContent) (string, string, error) {
+func (p *Portal) getMatrixMediaUrl(content *event.MessageEventContent) (interface{}, error) {
 	filename := content.Body
 	if content.FileName != "" && content.Body != content.FileName {
 		filename = content.FileName
@@ -1325,11 +1325,26 @@ func (p *Portal) getMatrixMediaUrl(content *event.MessageEventContent) (string, 
 
 	mxc, err := content.URL.Parse()
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
-	return filename, p.MainIntent().GetDownloadURL(mxc), nil
+	intent := p.MainIntent()
 
+	if hs, ok := p.bridge.Config.Bridge.DoublePuppetServerMap[mxc.Homeserver]; ok {
+		return &wechat.MediaData{
+			Name: filename,
+			URL:  strings.Replace(intent.GetDownloadURL(mxc), p.bridge.AS.HomeserverURL, hs, 1),
+		}, nil
+	}
+
+	blob, err := intent.DownloadBytes(mxc)
+	if err != nil {
+		return nil, err
+	}
+	return &wechat.BlobData{
+		Name:   filename,
+		Binary: blob,
+	}, nil
 }
 
 func (p *Portal) preprocessMatrixMedia(content *event.MessageEventContent) (string, []byte, error) {
