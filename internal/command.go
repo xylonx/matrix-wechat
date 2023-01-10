@@ -93,7 +93,7 @@ func fnLogin(ce *WrappedCommandEvent) {
 		return
 	}
 
-	qrCode := ce.User.LoginWtihQRCode()
+	qrCode := ce.User.LoginWithQRCode()
 	if len(qrCode) == 0 {
 		ce.Reply("Get QR code timed out. Please restart the login.")
 		return

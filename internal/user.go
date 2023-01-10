@@ -340,7 +340,7 @@ func (u *User) Login() error {
 	return err
 }
 
-func (u *User) LoginWtihQRCode() []byte {
+func (u *User) LoginWithQRCode() []byte {
 	return u.Client.LoginWithQRCode()
 }
 

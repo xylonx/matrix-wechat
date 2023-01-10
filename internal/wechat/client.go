@@ -12,7 +12,8 @@ const requestTimeout = 30 * time.Second
 type WechatClient struct {
 	mxid    string
 	service *WechatService
-	hanlder func(*WebsocketMessage)
+
+	handler func(*WebsocketMessage)
 
 	log log.Logger
 }
@@ -21,7 +22,7 @@ func NewWechatClient(mxid string, service *WechatService, handler func(*Websocke
 	return &WechatClient{
 		mxid:    mxid,
 		service: service,
-		hanlder: handler,
+		handler: handler,
 		log:     service.log.Sub("Client").Sub(mxid),
 	}
 }
@@ -226,5 +227,5 @@ func (c *WechatClient) SendMessage(msg *MatrixMessage) error {
 }
 
 func (c *WechatClient) HandleEvent(msg *WebsocketMessage) {
-	c.hanlder(msg)
+	c.handler(msg)
 }
