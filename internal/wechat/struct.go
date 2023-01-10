@@ -105,6 +105,11 @@ type BlobData struct {
 	Binary []byte `json:"binary,omitempty"`
 }
 
+type MediaData struct {
+	Name string `json:"name,omitempty"`
+	URL  string `json:"url,omitempty"`
+}
+
 type LocationData struct {
 	Name      string  `json:"name,omitempty"`
 	Address   string  `json:"address,omitempty"`

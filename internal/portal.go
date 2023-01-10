@@ -1316,6 +1316,22 @@ func (p *Portal) uploadMedia(intent *appservice.IntentAPI, data []byte, content 
 	return nil
 }
 
+// getMatrixMediaUrl - parse media name and downloadable url from event
+func (p *Portal) getMatrixMediaUrl(content *event.MessageEventContent) (string, string, error) {
+	filename := content.Body
+	if content.FileName != "" && content.Body != content.FileName {
+		filename = content.FileName
+	}
+
+	mxc, err := content.URL.Parse()
+	if err != nil {
+		return "", "", err
+	}
+
+	return filename, p.MainIntent().GetDownloadURL(mxc), nil
+
+}
+
 func (p *Portal) preprocessMatrixMedia(content *event.MessageEventContent) (string, []byte, error) {
 	fileName := content.Body
 	if content.FileName != "" && content.Body != content.FileName {
@@ -1415,15 +1431,15 @@ func (p *Portal) HandleMatrixMessage(sender *User, evt *event.Event) {
 			msg.Data = mentions
 		}
 	case event.MsgImage, event.MsgVideo, event.MsgFile:
-		name, data, err := p.preprocessMatrixMedia(content)
-		if data == nil {
-			p.log.Warnfln("Failed to process matrix media: %v", err)
+		name, mediaUrl, err := p.getMatrixMediaUrl(content)
+		if err != nil {
+			p.log.Warnfln("Failed to get matrix media url: %v", err)
 			return
 		}
 		msg.MessageType = string(content.MsgType)
-		msg.Data = &wechat.BlobData{
-			Name:   name,
-			Binary: data,
+		msg.Data = &wechat.MediaData{
+			Name: name,
+			URL:  mediaUrl,
 		}
 	default:
 		p.log.Warnfln("%s not support", content.MsgType)
