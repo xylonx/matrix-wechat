@@ -59,7 +59,7 @@ var upgrader = websocket.Upgrader{}
 // handleWsMessage - melody.HandleMessage
 func (ws *WechatService) handleWsMessage(s *melody.Session, data []byte) {
 	var msg WebsocketMessage
-	if err := json.Unmarshal(data, &data); err != nil {
+	if err := json.Unmarshal(data, &msg); err != nil {
 		ws.log.Warnln("Error reading from websocket:", err)
 	}
 
