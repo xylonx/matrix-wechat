@@ -198,6 +198,15 @@ func (ws *WechatService) RequestWebsocket(ctx context.Context, cmd *WebsocketReq
 }
 
 func (ws *WechatService) SendWebsocket(cmd *WebsocketRequest) error {
+	jsonCmd, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+
+	if cmd.Command == CommandIsLogin {
+		return ws.m.Broadcast(jsonCmd)
+	}
+
 	sessions, err := ws.m.Sessions()
 	if err != nil {
 		ws.log.Warnfln("no websocket find")
@@ -223,10 +232,6 @@ func (ws *WechatService) SendWebsocket(cmd *WebsocketRequest) error {
 		return fmt.Errorf("no session related to mxid: %s", cmd.MXID)
 	}
 
-	jsonCmd, err := json.Marshal(cmd)
-	if err != nil {
-		return err
-	}
 	return sess.Write(jsonCmd)
 }
 
