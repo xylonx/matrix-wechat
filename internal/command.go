@@ -125,7 +125,9 @@ func fnLogin(ce *WrappedCommandEvent) {
 				for {
 					select {
 					case <-clock.C:
-						if !ce.User.IsLoggedIn() {
+						isLogin := ce.User.IsLoggedIn()
+						ce.User.log.Infofln("Check WeChat login status: %v", isLogin)
+						if !isLogin {
 							if count == maxCheckCount {
 								ce.User.DeleteConnection()
 								ce.Reply("You're not logged into WeChat.")
