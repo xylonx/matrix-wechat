@@ -7,6 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.0
 	github.com/lib/pq v1.10.7
 	github.com/mattn/go-sqlite3 v1.14.15
+	github.com/olahol/melody v1.1.1
 	github.com/wdvxdr1123/go-silk v0.0.0-20220304095002-f67345df09ea
 	maunium.net/go/maulogger/v2 v2.3.2
 	maunium.net/go/mautrix v0.12.2

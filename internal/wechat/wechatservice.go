@@ -13,6 +13,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/olahol/melody"
+
 	log "maunium.net/go/maulogger/v2"
 )
 
@@ -38,8 +40,9 @@ type WechatService struct {
 	addr   string
 	secret string
 
-	server    *http.Server
-	conn      *websocket.Conn
+	m      *melody.Melody
+	server *http.Server
+	// conn      *websocket.Conn
 	connLock  sync.Mutex
 	writeLock sync.Mutex
 
@@ -53,8 +56,54 @@ type WechatService struct {
 
 var upgrader = websocket.Upgrader{}
 
-func (ws *WechatService) Conn() *websocket.Conn {
-	return ws.conn
+// handleWsMessage - melody.HandleMessage
+func (ws *WechatService) handleWsMessage(s *melody.Session, data []byte) {
+	var msg WebsocketMessage
+	if err := json.Unmarshal(data, &data); err != nil {
+		ws.log.Warnln("Error reading from websocket:", err)
+	}
+
+	if msg.MXID != "" {
+		s.Set(msg.MXID, struct{}{})
+	}
+
+	if msg.Command == "" {
+		ws.clientsLock.RLock()
+		client, ok := ws.clients[msg.MXID]
+		if !ok {
+			ws.log.Warnln("Dropping event to %d: no receiver", msg.MXID)
+			return
+		}
+		go client.HandleEvent(&msg)
+		ws.clientsLock.RUnlock()
+	} else if msg.Command == CommandPing { // handle reconnected agent
+		ws.log.Infofln("agent reconnected with mxid = %s", msg.MXID)
+	} else if msg.Command == CommandResponse || msg.Command == CommandError { // handle matrix command response
+		ws.websocketRequestsLock.RLock()
+		respChan, ok := ws.websocketRequests[msg.ReqID]
+		if ok {
+			select {
+			case respChan <- &msg.WebsocketCommand:
+			default:
+				ws.log.Warnfln("Failed to handle response to %d: channel didn't accept response", msg.ReqID)
+			}
+		} else {
+			ws.log.Warnfln("Dropping response to %d: unknown request ID", msg.ReqID)
+		}
+		ws.websocketRequestsLock.RUnlock()
+	} else {
+		ws.log.Warnfln("Unknown Command: %s", msg.Command)
+	}
+}
+
+// handleWsConnect - melody.HandleConnect
+func (ws *WechatService) handleWsConnect(s *melody.Session) {
+	ws.log.Infoln("WechatService websocket Connected")
+}
+
+// handleWsDisconnect - melody.HandleDisconnect
+func (ws *WechatService) handleWsDisconnect(s *melody.Session) {
+	ws.log.Infoln("WechatService websocket Disconnected")
 }
 
 func (ws *WechatService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -69,61 +118,7 @@ func (ws *WechatService) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		ws.log.Warnln("Failed to upgrade websocket request:", err)
-		return
-	}
-
-	ws.log.Infoln("WechatService websocket connected")
-	defer func() {
-		ws.log.Infoln("Disconnected from websocket")
-		ws.connLock.Lock()
-		if ws.conn == conn {
-			ws.conn = nil
-		}
-		ws.connLock.Unlock()
-		_ = conn.Close()
-	}()
-
-	ws.connLock.Lock()
-	ws.conn = conn
-	ws.connLock.Unlock()
-
-	for {
-		var msg WebsocketMessage
-		err := conn.ReadJSON(&msg)
-		if err != nil {
-			ws.log.Warnln("Error reading from websocket:", err)
-			break
-		}
-
-		if msg.Command == "" {
-			ws.clientsLock.RLock()
-			client, ok := ws.clients[msg.MXID]
-			if !ok {
-				ws.log.Warnln("Dropping event to %d: no receiver", msg.MXID)
-				continue
-			}
-			go client.HandleEvent(&msg)
-			ws.clientsLock.RUnlock()
-		} else if msg.Command == CommandPing {
-			// TODO:
-		} else if msg.Command == CommandResponse || msg.Command == CommandError {
-			ws.websocketRequestsLock.RLock()
-			respChan, ok := ws.websocketRequests[msg.ReqID]
-			if ok {
-				select {
-				case respChan <- &msg.WebsocketCommand:
-				default:
-					ws.log.Warnln("Failed to handle response to %d: channel didn't accept response", msg.ReqID)
-				}
-			} else {
-				ws.log.Warnln("Dropping response to %d: unknown request ID", msg.ReqID)
-			}
-			ws.websocketRequestsLock.RUnlock()
-		}
-	}
+	ws.m.HandleRequest(w, r)
 }
 
 func (ws *WechatService) Start() {
@@ -135,17 +130,9 @@ func (ws *WechatService) Start() {
 }
 
 func (ws *WechatService) Stop() {
-	go func(oldConn *websocket.Conn) {
-		if oldConn == nil {
-			return
-		}
-		msg := websocket.FormatCloseMessage(
-			websocket.CloseGoingAway,
-			fmt.Sprintf(`{"command": "%s", "status": "server_shutting_down"}`, CommandDisconnect),
-		)
-		_ = oldConn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(3*time.Second))
-		_ = oldConn.Close()
-	}(ws.conn)
+	go ws.m.CloseWithMsg(
+		melody.FormatCloseMessage(websocket.CloseGoingAway,
+			fmt.Sprintf(`{"command": "%s", "status": "server_shutting_down"}`, CommandDisconnect)))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -211,19 +198,36 @@ func (ws *WechatService) RequestWebsocket(ctx context.Context, cmd *WebsocketReq
 }
 
 func (ws *WechatService) SendWebsocket(cmd *WebsocketRequest) error {
-	conn := ws.conn
-	if cmd == nil {
-		return nil
-	} else if conn == nil {
+	sessions, err := ws.m.Sessions()
+	if err != nil {
+		ws.log.Warnfln("no websocket find")
 		return ErrWebsocketNotConnected
 	}
-	ws.writeLock.Lock()
-	defer ws.writeLock.Unlock()
-	if cmd.Deadline == 0 {
-		cmd.Deadline = 3 * time.Minute
+
+	var sess *melody.Session = nil
+	switch cmd.Command {
+	case CommandConnect:
+		// TODO(xylonx): load balance
+		if len(sessions) > 0 {
+			sess = sessions[0]
+		}
+	default:
+		for i := range sessions {
+			if _, exists := sessions[i].Get(cmd.MXID); exists {
+				sess = sessions[i]
+			}
+		}
 	}
-	_ = conn.SetWriteDeadline(time.Now().Add(cmd.Deadline))
-	return conn.WriteJSON(cmd)
+
+	if sess == nil {
+		return fmt.Errorf("no session related to mxid: %s", cmd.MXID)
+	}
+
+	jsonCmd, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	return sess.Write(jsonCmd)
 }
 
 func (ws *WechatService) addWebsocketResponseWaiter(reqID int, waiter chan<- *WebsocketCommand) {
@@ -250,6 +254,10 @@ func NewWechatService(addr, secret string, log log.Logger) *WechatService {
 		clients:           make(map[string]*WechatClient),
 		websocketRequests: make(map[int]chan<- *WebsocketCommand),
 	}
+	service.m = melody.New()
+	service.m.HandleConnect(service.handleWsConnect)
+	service.m.HandleMessage(service.handleWsMessage)
+	service.m.HandleDisconnect(service.handleWsDisconnect)
 	service.server = &http.Server{
 		Addr:    service.addr,
 		Handler: service,
