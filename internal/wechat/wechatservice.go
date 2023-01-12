@@ -42,9 +42,6 @@ type WechatService struct {
 
 	m      *melody.Melody
 	server *http.Server
-	// conn      *websocket.Conn
-	connLock  sync.Mutex
-	writeLock sync.Mutex
 
 	clients     map[string]*WechatClient
 	clientsLock sync.RWMutex
@@ -260,6 +257,8 @@ func NewWechatService(addr, secret string, log log.Logger) *WechatService {
 		websocketRequests: make(map[int]chan<- *WebsocketCommand),
 	}
 	service.m = melody.New()
+	service.m.Config.MaxMessageSize = 10 * 1024 * 1024 // max message size is 10M
+	service.m.Config.WriteWait = time.Minute * 3
 	service.m.HandleConnect(service.handleWsConnect)
 	service.m.HandleMessage(service.handleWsMessage)
 	service.m.HandleDisconnect(service.handleWsDisconnect)

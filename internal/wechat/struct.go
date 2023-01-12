@@ -100,14 +100,10 @@ type WebsocketEvent struct {
 	Extra     json.RawMessage `json:"extra,omitempty"`
 }
 
-type BlobData struct {
-	Name   string `json:"name,omitempty"`
-	Binary []byte `json:"binary,omitempty"`
-}
-
 type MediaData struct {
 	Name string `json:"name,omitempty"`
 	URL  string `json:"url,omitempty"`
+	Mime string `json:"mime,omitempty"`
 }
 
 type LocationData struct {

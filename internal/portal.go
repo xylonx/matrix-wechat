@@ -17,7 +17,6 @@ import (
 	"github.com/duo/matrix-wechat/internal/types"
 	"github.com/duo/matrix-wechat/internal/wechat"
 
-	"github.com/gabriel-vasile/mimetype"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/appservice"
 	"maunium.net/go/mautrix/bridge"
@@ -47,6 +46,8 @@ var (
 	errUserNotLoggedIn         = errors.New("user is not logged in")
 	errMediaDownloadFailed     = errors.New("failed to download media")
 	errMediaDecryptFailed      = errors.New("failed to decrypt media")
+
+	errFetchMediaUrlFailed = errors.New("failed to fetch media url")
 
 	PortalCreationDummyEvent = event.Type{Type: "me.lxduo.wechat.dummy.portal_created", Class: event.MessageEventType}
 )
@@ -398,42 +399,27 @@ func (p *Portal) convertWechatMedia(source *User, msg *wechat.WebsocketMessage, 
 		Intent: intent,
 	}
 
-	var data wechat.BlobData
+	var data wechat.MediaData
 	err := json.Unmarshal(msg.Extra, &data)
 	if err != nil {
 		return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to decode wechat media"), converted)
 	}
 
-	binary := data.Binary
-	if msg.EventType == "m.audio" {
-		binary, err = convertToOgg(data.Binary)
-		if err != nil {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("failed to convert silk audio to ogg format"), converted)
-		}
-	}
-
-	mime := mimetype.Detect(binary)
-
 	content := &event.MessageEventContent{
 		MsgType: event.MessageType(msg.EventType),
 		Info: &event.FileInfo{
-			MimeType: mime.String(),
-			Size:     len(binary),
+			MimeType: data.Mime,
 		},
 		Body: data.Name,
 	}
 	converted.Type = event.EventMessage
 	converted.Content = content
 
-	err = p.uploadMedia(intent, binary, content)
-	if err != nil {
-		if errors.Is(err, mautrix.MTooLarge) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("homeserver rejected too large file"), converted)
-		} else if httpErr, ok := err.(mautrix.HTTPError); ok && httpErr.IsStatus(413) {
-			return p.makeMediaBridgeFailureMessage(msgID, errors.New("proxy rejected too large file"), converted)
-		} else {
-			return p.makeMediaBridgeFailureMessage(msgID, fmt.Errorf("failed to upload media: %w", err), converted)
-		}
+	if p.Encrypted {
+		// TODO(xylonx): consider encrypt file for encrypted room from client side avoiding double upload?
+		return p.makeMediaBridgeFailureMessage(msgID, errors.New("encrypted room not supported now"), converted)
+	} else {
+		content.URL = id.ContentURIString(data.URL)
 	}
 
 	return converted
@@ -1044,7 +1030,6 @@ func (p *Portal) CreateMatrixRoom(user *User, groupInfo *wechat.GroupInfo, isFul
 				} else {
 					foundInfo.Members = m
 					groupInfo = foundInfo
-					isFullInfo = true
 				}
 			}
 		}
@@ -1325,7 +1310,7 @@ func (p *Portal) getMatrixMediaUrl(content *event.MessageEventContent) (interfac
 
 	mxc, err := content.URL.Parse()
 	if err != nil {
-		return nil, err
+		return nil, util.NewDualError(errFetchMediaUrlFailed, err)
 	}
 
 	intent := p.MainIntent()
@@ -1337,14 +1322,7 @@ func (p *Portal) getMatrixMediaUrl(content *event.MessageEventContent) (interfac
 		}, nil
 	}
 
-	blob, err := intent.DownloadBytes(mxc)
-	if err != nil {
-		return nil, err
-	}
-	return &wechat.BlobData{
-		Name:   filename,
-		Binary: blob,
-	}, nil
+	return nil, util.NewDualError(errFetchMediaUrlFailed, fmt.Errorf("failed find media id %s for homeserver %s in double puppet server", mxc.FileID, mxc.Homeserver))
 }
 
 func (p *Portal) preprocessMatrixMedia(content *event.MessageEventContent) (string, []byte, error) {
